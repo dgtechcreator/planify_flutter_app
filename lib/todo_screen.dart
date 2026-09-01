@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'api_service.dart';
 import 'add_edit_todo_screen.dart';
 import 'app_drawer.dart';
-
+import 'shimmer_loading.dart';
 class TodoScreen extends StatefulWidget {
   final String token;
 
@@ -95,7 +95,7 @@ class _TodoScreenState extends State<TodoScreen> {
         future: _todosFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const ShimmerLoading();
           }
           if (snapshot.hasError) {
             return Center(child: Text('Error: ${snapshot.error}'));

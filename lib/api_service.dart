@@ -7,7 +7,19 @@ class ApiService {
   // the updated backend (AuthApi/EventApi/DashboardApi controllers,
   // JWT auth) is actually published to this server -- see the deployment
   // steps discussed with the user before relying on this.
+  // USB-connected phone: `adb reverse tcp:5055 tcp:5055` forwards this
+  // localhost port to the PC's local API. Re-run that command after every
+  // USB reconnect/reboot -- it doesn't persist. Switch to the live server
+  // URL once the backend is deployed there and you're not tethered by USB.
+
+  //// For Local
+
+  //static const String serverOrigin = 'http://localhost:5055';
+
+  ////For Live Server
+
   static const String serverOrigin = 'https://planify.jmmportal.com';
+
   static const String baseUrl = '$serverOrigin/api';
 
   static Map<String, String> _authHeaders(String token) => {
@@ -32,6 +44,130 @@ class ApiService {
     }
 
     return data;
+  }
+
+  static Future<Map<String, dynamic>> googleLogin(String idToken) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/AuthApi/google-login'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'IdToken': idToken}),
+    );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+    if (response.statusCode != 200 || data['success'] != true) {
+      throw Exception(data['message'] ?? 'Google sign-in failed');
+    }
+
+    return data;
+  }
+
+  static Future<Map<String, dynamic>> register({
+    required String firstName,
+    String? lastName,
+    required String userName,
+    required String email,
+    required String phone,
+    required String password,
+    required String address,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/AuthApi/register'),
+      body: {
+        'FirstName': firstName,
+        'LastName': lastName ?? '',
+        'UserName': userName,
+        'Email': email,
+        'Phone': phone,
+        'Password': password,
+        'Address': address,
+      },
+    );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+    if (response.statusCode != 200 || data['success'] != true) {
+      throw Exception(data['message'] ?? 'Registration failed');
+    }
+
+    return data;
+  }
+
+  static Future<Map<String, dynamic>> getProfile(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/AuthApi/profile'),
+      headers: _authHeaders(token),
+    );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+    if (response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to load profile');
+    }
+
+    return data['data'] as Map<String, dynamic>;
+  }
+
+  static Future<String?> updateProfile(
+    String token, {
+    required String firstName,
+    String? lastName,
+    required String userName,
+    required String phone,
+    String? address,
+    File? profileImage,
+  }) async {
+    final request = http.MultipartRequest(
+      'PUT',
+      Uri.parse('$baseUrl/AuthApi/profile'),
+    );
+    request.headers.addAll(_authHeaders(token));
+
+    request.fields.addAll({
+      'FirstName': firstName,
+      'LastName': lastName ?? '',
+      'UserName': userName,
+      'Phone': phone,
+      'Address': address ?? '',
+    });
+
+    if (profileImage != null) {
+      request.files.add(
+        await http.MultipartFile.fromPath('profileImage', profileImage.path),
+      );
+    }
+
+    final streamedResponse = await request.send();
+    final response = await http.Response.fromStream(streamedResponse);
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+    if (response.statusCode != 200 || data['success'] != true) {
+      throw Exception(data['message'] ?? 'Failed to update profile');
+    }
+
+    final resultData = data['data'] as Map<String, dynamic>?;
+    return resultData?['userImage'] as String?;
+  }
+
+  static Future<void> changePassword(
+    String token, {
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/AuthApi/change-password'),
+      headers: {..._authHeaders(token), 'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'CurrentPassword': currentPassword,
+        'NewPassword': newPassword,
+      }),
+    );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+    if (response.statusCode != 200 || data['success'] != true) {
+      throw Exception(data['message'] ?? 'Failed to change password');
+    }
   }
 
   static Future<List<dynamic>> getEvents(String token) async {
@@ -282,6 +418,7 @@ class ApiService {
 
   /// Creates a new user, or updates an existing one when [id] is passed.
   /// Leave [password] null/empty on edit to keep the user's current password.
+  /// Leave [profileImage] null to keep the user's current photo.
   static Future<void> saveUser(
     String token, {
     int? id,
@@ -293,23 +430,34 @@ class ApiService {
     required String email,
     String? address,
     required int userTypeId,
+    File? profileImage,
   }) async {
-    final response = await http.post(
+    final request = http.MultipartRequest(
+      'POST',
       Uri.parse('$baseUrl/UserApi'),
-      headers: {..._authHeaders(token), 'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'Id': id,
-        'FirstName': firstName,
-        'LastName': lastName ?? '',
-        'UserName': userName,
-        'Phone': phone,
-        if (password != null && password.isNotEmpty) 'Password': password,
-        'Email': email,
-        'Address': address ?? '',
-        'UserTypeID': userTypeId,
-      }),
     );
+    request.headers.addAll(_authHeaders(token));
 
+    request.fields.addAll({
+      if (id != null) 'Id': id.toString(),
+      'FirstName': firstName,
+      'LastName': lastName ?? '',
+      'UserName': userName,
+      'Phone': phone,
+      if (password != null && password.isNotEmpty) 'Password': password,
+      'Email': email,
+      'Address': address ?? '',
+      'UserTypeID': userTypeId.toString(),
+    });
+
+    if (profileImage != null) {
+      request.files.add(
+        await http.MultipartFile.fromPath('profileImage', profileImage.path),
+      );
+    }
+
+    final streamedResponse = await request.send();
+    final response = await http.Response.fromStream(streamedResponse);
     final data = jsonDecode(response.body) as Map<String, dynamic>;
 
     if (response.statusCode != 200 || data['success'] != true) {
@@ -340,6 +488,231 @@ class ApiService {
 
     if (response.statusCode != 200 || data['success'] != true) {
       throw Exception(data['message'] ?? 'Failed to delete user');
+    }
+  }
+
+  // ---- Mail Master ----
+
+  static Future<void> sendMail(
+    String token, {
+    required String to,
+    required String subject,
+    required String message,
+    List<File> attachments = const [],
+  }) async {
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$baseUrl/MailApi/send'),
+    );
+    request.headers.addAll(_authHeaders(token));
+    request.fields.addAll({
+      'to': to,
+      'subject': subject,
+      'message': message,
+    });
+    for (final file in attachments) {
+      request.files.add(
+        await http.MultipartFile.fromPath('attachments', file.path),
+      );
+    }
+
+    final streamedResponse = await request.send();
+    final response = await http.Response.fromStream(streamedResponse);
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+    if (response.statusCode != 200 || data['success'] != true) {
+      throw Exception(data['message'] ?? 'Failed to send mail');
+    }
+  }
+
+  static Future<List<dynamic>> getMailSummary(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/MailApi/summary'),
+      headers: _authHeaders(token),
+    );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+    if (response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to load mail summary');
+    }
+
+    return data['data'] as List<dynamic>;
+  }
+
+  static Future<String> getMailBody(String token, int id) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/MailApi/$id'),
+      headers: _authHeaders(token),
+    );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+    if (response.statusCode != 200 || data['success'] != true) {
+      throw Exception(data['message'] ?? 'Failed to load mail body');
+    }
+
+    return data['body'] as String? ?? '';
+  }
+
+  // ---- Contact Import ----
+
+  static Future<String> uploadContactFile(String token, File file) async {
+    final request = http.MultipartRequest(
+      'POST',
+      Uri.parse('$baseUrl/ContactApi/upload'),
+    );
+    request.headers.addAll(_authHeaders(token));
+    request.files.add(
+      await http.MultipartFile.fromPath('file', file.path),
+    );
+
+    final streamedResponse = await request.send();
+    final response = await http.Response.fromStream(streamedResponse);
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+    if (response.statusCode != 200 || data['success'] != true) {
+      throw Exception(data['message'] ?? 'Failed to upload contacts');
+    }
+
+    return data['message'] as String? ?? 'Contacts imported.';
+  }
+
+  static Future<List<dynamic>> getContactSummary(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/ContactApi/summary'),
+      headers: _authHeaders(token),
+    );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+    if (response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to load contacts');
+    }
+
+    return data['data'] as List<dynamic>;
+  }
+
+  // ---- Map / Live Location ----
+
+  static Future<void> saveLiveLocation(String token, double lat, double lon) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/MapApi/live-location'),
+      headers: {..._authHeaders(token), 'Content-Type': 'application/json'},
+      body: jsonEncode({'Lat': lat, 'Lon': lon}),
+    );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200 || data['success'] != true) {
+      throw Exception(data['message'] ?? 'Failed to update location');
+    }
+  }
+
+  static Future<List<dynamic>> getLiveLocations(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/MapApi/live-locations'),
+      headers: _authHeaders(token),
+    );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to load live locations');
+    }
+    return data['data'] as List<dynamic>;
+  }
+
+  static Future<List<dynamic>> getMyLocationTasks(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/MapApi/my-tasks'),
+      headers: _authHeaders(token),
+    );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to load tasks');
+    }
+    return data['data'] as List<dynamic>;
+  }
+
+  static Future<List<dynamic>> getAllLocationTasks(
+    String token, {
+    String? status,
+    int? userId,
+  }) async {
+    final query = <String, String>{};
+    if (status != null && status.isNotEmpty) query['status'] = status;
+    if (userId != null) query['userId'] = userId.toString();
+
+    final uri = Uri.parse('$baseUrl/MapApi/all-tasks').replace(queryParameters: query.isEmpty ? null : query);
+    final response = await http.get(uri, headers: _authHeaders(token));
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to load tasks');
+    }
+    return data['data'] as List<dynamic>;
+  }
+
+  static Future<void> updateLocationTaskStatus(String token, int taskId, String status) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/MapApi/update-status'),
+      headers: {..._authHeaders(token), 'Content-Type': 'application/json'},
+      body: jsonEncode({'TaskId': taskId, 'Status': status}),
+    );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200 || data['success'] != true) {
+      throw Exception(data['message'] ?? 'Failed to update status');
+    }
+  }
+
+  static Future<List<dynamic>> getLocationHistory(String token, {int? userId}) async {
+    final uri = Uri.parse('$baseUrl/MapApi/history').replace(
+      queryParameters: userId != null ? {'userId': userId.toString()} : null,
+    );
+    final response = await http.get(uri, headers: _authHeaders(token));
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to load history');
+    }
+    return data['data'] as List<dynamic>;
+  }
+
+  static Future<List<dynamic>> getMapUsersDropdown(String token) async {
+    final response = await http.get(
+      Uri.parse('$baseUrl/MapApi/users-dropdown'),
+      headers: _authHeaders(token),
+    );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200) {
+      throw Exception(data['message'] ?? 'Failed to load users');
+    }
+    return data['data'] as List<dynamic>;
+  }
+
+  static Future<void> assignLocationTask(
+    String token, {
+    required int userId,
+    required double lat,
+    required double lon,
+    required String locationName,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/MapApi/assign'),
+      headers: {..._authHeaders(token), 'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'UserID': userId,
+        'Latitude': lat,
+        'Longitude': lon,
+        'LocationName': locationName,
+      }),
+    );
+
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200 || data['success'] != true) {
+      throw Exception(data['message'] ?? 'Failed to assign location');
     }
   }
 

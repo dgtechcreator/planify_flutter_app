@@ -1,132 +1,171 @@
+
 import 'package:flutter/material.dart';
-import 'api_service.dart';
-import 'add_edit_user_screen.dart';
 
-class UsersScreen extends StatefulWidget {
-  final String token;
+class ShimmerLoading extends StatefulWidget {
+const ShimmerLoading({super.key});
 
-  const UsersScreen({super.key, required this.token});
-
-  @override
-  State<UsersScreen> createState() => _UsersScreenState();
+@override
+State<ShimmerLoading> createState() => _ShimmerLoadingState();
 }
 
-class _UsersScreenState extends State<UsersScreen> {
-  late Future<List<dynamic>> _usersFuture;
+class _ShimmerLoadingState extends State<ShimmerLoading>
+with SingleTickerProviderStateMixin {
+late AnimationController _controller;
+late Animation<double> _animation;
 
-  @override
-  void initState() {
-    super.initState();
-    _usersFuture = ApiService.getUsers(widget.token);
-  }
+@override
+void initState() {
+super.initState();
 
-  Future<void> _refresh() async {
-    setState(() {
-      _usersFuture = ApiService.getUsers(widget.token);
-    });
-    await _usersFuture;
-  }
+_controller = AnimationController(
+duration: const Duration(milliseconds: 1500),
+vsync: this,
+)..repeat();
 
-  int _readId(Map<String, dynamic> row) =>
-      (row['Id'] ?? row['ID'] ?? row['id']) as int;
+_animation = Tween<double>(
+begin: -2,
+end: 2,
+).animate(
+CurvedAnimation(
+parent: _controller,
+curve: Curves.easeInOut,
+),
+);
+}
 
-  Future<void> _openAdd() async {
-    final saved = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(builder: (_) => AddEditUserScreen(token: widget.token)),
-    );
-    if (saved == true) _refresh();
-  }
+@override
+void dispose() {
+_controller.dispose();
+super.dispose();
+}
 
-  Future<void> _openEdit(int id) async {
-    final saved = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => AddEditUserScreen(token: widget.token, id: id),
-      ),
-    );
-    if (saved == true) _refresh();
-  }
+@override
+Widget build(BuildContext context) {
+final isDark =
+Theme.of(context).brightness == Brightness.dark;
 
-  Future<void> _deleteUser(int id) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Delete User'),
-        content: const Text('Are you sure you want to delete this user?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Delete')),
-        ],
-      ),
-    );
-    if (confirmed != true) return;
+return AnimatedBuilder(
+animation: _animation,
+builder: (context, child) {
+return ListView(
+padding: const EdgeInsets.all(16),
+children: List.generate(
+5,
+(i) => _ShimmerCard(
+animation: _animation,
+isDark: isDark,
+),
+),
+);
+},
+);
+}
+}
 
-    try {
-      await ApiService.deleteUser(widget.token, id);
-      _refresh();
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
-      );
-    }
-  }
+class _ShimmerCard extends StatelessWidget {
+final Animation<double> animation;
+final bool isDark;
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Users')),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _openAdd,
-        child: const Icon(Icons.person_add_alt_1),
-      ),
-      body: FutureBuilder<List<dynamic>>(
-        future: _usersFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
-          }
+const _ShimmerCard({
+required this.animation,
+required this.isDark,
+});
 
-          final users = snapshot.data ?? [];
-          if (users.isEmpty) {
-            return const Center(child: Text('No users found.'));
-          }
+@override
+Widget build(BuildContext context) {
+return Card(
+margin: const EdgeInsets.only(bottom: 12),
 
-          return RefreshIndicator(
-            onRefresh: _refresh,
-            child: ListView.builder(
-              padding: const EdgeInsets.all(12),
-              itemCount: users.length,
-              itemBuilder: (context, index) {
-                final user = users[index] as Map<String, dynamic>;
-                final id = _readId(user);
-                final name = [user['FirstName'], user['LastName']]
-                    .where((p) => p != null && p.toString().isNotEmpty)
-                    .join(' ');
+child: Padding(
+padding: const EdgeInsets.all(16),
 
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  child: ListTile(
-                    onTap: () => _openEdit(id),
-                    title: Text(name.isEmpty ? (user['UserName']?.toString() ?? '-') : name),
-                    subtitle: Text(
-                        '${user['Email'] ?? '-'}\n${user['ContactNo'] ?? user['Phone'] ?? '-'}'),
-                    isThreeLine: true,
-                    trailing: IconButton(
-                      icon: const Icon(Icons.delete_outline),
-                      onPressed: () => _deleteUser(id),
-                    ),
-                  ),
-                );
-              },
-            ),
-          );
-        },
-      ),
-    );
-  }
+child: Column(
+crossAxisAlignment: CrossAxisAlignment.start,
+
+children: [
+_ShimmerBox(
+width: double.infinity,
+height: 60,
+animation: animation,
+isDark: isDark,
+),
+
+const SizedBox(height: 12),
+
+_ShimmerBox(
+width: 200,
+height: 16,
+animation: animation,
+isDark: isDark,
+),
+
+const SizedBox(height: 8),
+
+_ShimmerBox(
+width: 150,
+height: 14,
+animation: animation,
+isDark: isDark,
+),
+],
+),
+),
+);
+}
+}
+
+class _ShimmerBox extends StatelessWidget {
+final double width;
+final double height;
+final Animation<double> animation;
+final bool isDark;
+
+const _ShimmerBox({
+required this.width,
+required this.height,
+required this.animation,
+required this.isDark,
+});
+
+@override
+Widget build(BuildContext context) {
+final baseColor =
+isDark ? Colors.grey[800]! : Colors.grey[300]!;
+
+final highlightColor =
+isDark ? Colors.grey[600]! : Colors.grey[100]!;
+
+return AnimatedBuilder(
+animation: animation,
+
+builder: (context, child) {
+return Container(
+width: width,
+height: height,
+
+decoration: BoxDecoration(
+borderRadius: BorderRadius.circular(8),
+
+gradient: LinearGradient(
+begin: Alignment(
+-1 + animation.value,
+0,
+),
+
+end: Alignment(
+1 + animation.value,
+0,
+),
+
+colors: [
+baseColor,
+highlightColor,
+baseColor,
+],
+),
+),
+);
+},
+);
+}
 }

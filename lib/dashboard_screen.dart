@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'api_service.dart';
-
+import 'shimmer_loading.dart';
 class DashboardScreen extends StatefulWidget {
   final String token;
 
@@ -36,7 +36,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       future: _dataFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
+          return const ShimmerLoading();
         }
 
         if (snapshot.hasError) {

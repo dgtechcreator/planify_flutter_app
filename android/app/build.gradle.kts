@@ -6,7 +6,9 @@ plugins {
 
 android {
     namespace = "com.example.planify_app"
-    compileSdk = flutter.compileSdkVersion
+    // file_picker's flutter_plugin_android_lifecycle dependency requires
+    // compileSdk 36+; flutter.compileSdkVersion (34) is too old for it.
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {

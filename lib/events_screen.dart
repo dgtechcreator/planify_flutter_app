@@ -5,7 +5,7 @@ import 'login_screen.dart';
 import 'add_edit_event_screen.dart';
 import 'event_detail_screen.dart';
 import 'app_drawer.dart';
-
+import 'shimmer_loading.dart';
 class EventsScreen extends StatefulWidget {
   final String token;
 
@@ -94,7 +94,7 @@ class _EventsScreenState extends State<EventsScreen> {
         future: _eventsFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
+            return const ShimmerLoading();
           }
 
           if (snapshot.hasError) {
